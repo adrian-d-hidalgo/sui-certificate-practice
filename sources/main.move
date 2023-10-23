@@ -1,12 +1,12 @@
 module defi::credit {
+    use std::string;
+    use std::vector;
     use sui::object::{Self, UID};
     use sui::tx_context::{Self, TxContext};
     use sui::balance::{Self, Balance};
     use sui::coin::{Self, Coin};
     use sui::sui::SUI;
-    use std::string;
     use sui::transfer;
-    use std::vector;
 
     struct CreditRequest has key, store {
         id: UID,
@@ -25,7 +25,7 @@ module defi::credit {
             id: object::new(ctx),
             amount: amount,
             reason: reason,
-            loans: vector::empty<Loan>()
+            loans: vector<Loan>[]
         };
 
         transfer::public_transfer(application, tx_context::sender(ctx));
@@ -34,7 +34,7 @@ module defi::credit {
     public entry fun addLoan(application: &mut CreditRequest, amount: Coin<SUI>, ctx: &mut TxContext) {
         let remain: u64 = getMissingFounds(application);
 
-        assert!(remain < coin::value(&amount), 0);
+        assert!(remain >= coin::value(&amount), 0);
 
         let loanBalance = coin::into_balance(amount);
 
@@ -47,7 +47,7 @@ module defi::credit {
     }
 
     public entry fun executeCreditRequest(application: &mut CreditRequest, ctx: &mut TxContext) {
-        assert!(getMissingFounds(application) != 0, 0);
+        assert!(getMissingFounds(application) == 0, 0);
 
         let CreditRequest {
             id: _id,
@@ -67,6 +67,8 @@ module defi::credit {
         };
 
         transfer::public_transfer(coin::from_balance(creditBalance, ctx), tx_context::sender(ctx));
+
+        // TODO: Change status to founded
     }
 
     fun getMissingFounds(application: &CreditRequest): u64 {
