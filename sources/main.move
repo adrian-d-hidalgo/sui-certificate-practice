@@ -1,12 +1,13 @@
 module defi::credit {
     use std::string;
     use std::vector;
-    use sui::object::{Self, UID};
+    use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
     use sui::balance::{Self, Balance};
     use sui::coin::{Self, Coin};
     use sui::sui::SUI;
     use sui::transfer;
+    use sui::event;
 
     struct CreditRequest has key, store {
         id: UID,
@@ -20,27 +21,43 @@ module defi::credit {
         balance: Balance<SUI>
     }
 
+     struct CreditRequetCreatedEvent has copy, drop {
+        request_id: ID,
+        requester: address,
+        amount: u64
+    }
+
     public entry fun createCreditRequest(amount: u64, reason: string::String, ctx: &mut TxContext) {
-        let application = CreditRequest {
+        let request = CreditRequest {
             id: object::new(ctx),
-            amount: amount,
-            reason: reason,
+            amount,
+            reason,
             loans: vector<Loan>[]
         };
 
-        transfer::public_transfer(application, tx_context::sender(ctx));
+        // TODO: Emit event after transfer
+        event::emit(CreditRequetCreatedEvent {
+            request_id: object::uid_to_inner(&request.id),
+            requester: tx_context::sender(ctx),
+            amount
+        });
+
+        transfer::public_transfer(request, tx_context::sender(ctx));        
     }
 
-    public entry fun addLoan(application: &mut CreditRequest, amount: Coin<SUI>, ctx: &mut TxContext) {
+    public entry fun addLoan(application: &mut CreditRequest, _coin: &mut Coin<SUI>, amount: u64, ctx: &mut TxContext) {
         let remain: u64 = getMissingFounds(application);
 
-        assert!(remain >= coin::value(&amount), 0);
+        assert!(coin::value(_coin) >= amount, 0);
+        assert!(amount <= remain, 0);
 
-        let loanBalance = coin::into_balance(amount);
+        let loanCoin = coin::split(_coin, amount, ctx);
+
+        let balance = coin::into_balance(loanCoin);
 
         let loan = Loan {
             id: object::new(ctx),
-            balance: loanBalance
+            balance
         };
 
         vector::push_back(&mut application.loans, loan);
@@ -68,7 +85,7 @@ module defi::credit {
 
         transfer::public_transfer(coin::from_balance(creditBalance, ctx), tx_context::sender(ctx));
 
-        // TODO: Change status to founded
+        // TODO: Freezing the credit object after it has been anchored
     }
 
     fun getMissingFounds(application: &CreditRequest): u64 {
